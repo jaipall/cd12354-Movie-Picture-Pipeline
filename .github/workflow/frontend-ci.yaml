@@ -1,0 +1,37 @@
+name: Frontend Continuous Integration
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'starter/frontend/**'
+  push:
+    branches: [ main ]
+    paths:
+      - 'starter/frontend/**'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: starter/frontend
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run build/test
+        run: npm run build --if-present
+
+      - name: Build frontend Docker image
+        run: docker build -t mp-frontend:latest .
