@@ -104,19 +104,19 @@ jobs:
       # Deploy backend to Kubernetes
       - name: Deploy to Kubernetes via Kustomize
         run: |
-          cd starter/backend/k8s
+         cd starter/backend/k8s
 
-          kustomize edit set image \
-            backend=${{ steps.login-ecr.outputs.registry }}/${{ secrets.AWS_ECR_REPOSITORY_BACKEND }}:latest
+         kustomize edit set image \
+         backend=${{ steps.login-ecr.outputs.registry }}/${{ secrets.AWS_ECR_REPOSITORY_BACKEND }}:${{ github.sha }}
 
-          kustomize build . | kubectl apply -f -
+         kustomize build . | kubectl apply -f -
 
-      # Verify Kubernetes deployment
+     # Verify Kubernetes deployment
       - name: Verify Kubernetes deployment
         run: |
-          kubectl rollout status deployment/backend --timeout=180s
+         kubectl rollout status deployment/backend --timeout=180s
 
-          echo "----- Logging - kubectl get all -----"
+         echo "----- Logging - kubectl get all -----"
           kubectl get all
 
           echo "----- Logging - kubectl describe deploy backend -----"
