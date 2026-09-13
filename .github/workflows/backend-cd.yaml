@@ -8,8 +8,13 @@ on:
   workflow_dispatch:
 
 jobs:
+
+  # =========================
+  # LINT
+  # =========================
   lint:
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: starter/backend
@@ -32,8 +37,13 @@ jobs:
       - name: Lint
         run: pipenv run lint
 
+
+  # =========================
+  # TEST
+  # =========================
   test:
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: starter/backend
@@ -56,15 +66,26 @@ jobs:
       - name: Test
         run: pipenv run test
 
+
+  # =========================
+  # BUILD + DEPLOY
+  # =========================
   build:
     needs: [lint, test]
     runs-on: ubuntu-latest
 
     steps:
+
+      # -------------------------
+      # Checkout
+      # -------------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
+
+      # -------------------------
       # Configure AWS
+      # -------------------------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -73,47 +94,88 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Check which AWS account/role GitHub is using
+
+      # -------------------------
+      # Check AWS identity
+      # -------------------------
       - name: Check AWS identity
         run: |
           aws sts get-caller-identity
 
+
+      # -------------------------
       # Login to ECR
+      # -------------------------
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Build and push backend Docker image
+
+      # -------------------------
+      # Build and Push Docker Image
+      # -------------------------
       - name: Build, tag, and push backend image to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY_BACKEND }}
           IMAGE_TAG: ${{ github.sha }}
+
         run: |
           cd starter/backend
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      # Configure kubectl for EKS
+          echo "Building Docker image..."
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            .
+
+          echo "Pushing Docker image to ECR..."
+          docker push \
+            $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+
+      # -------------------------
+      # Configure Kubernetes
+      # -------------------------
       - name: Set up Kubeconfig for EKS
         run: |
           aws eks update-kubeconfig \
             --name ${{ secrets.AWS_EKS_CLUSTER_NAME }} \
             --region ${{ secrets.AWS_REGION }}
 
-      # Deploy backend to Kubernetes
+
+      # -------------------------
+      # Check Kubernetes connection
+      # -------------------------
+      - name: Check Kubernetes connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+
+      # -------------------------
+      # Deploy using Kustomize
+      # -------------------------
       - name: Deploy to Kubernetes via Kustomize
         run: |
           cd starter/backend/k8s
 
+          echo "Setting backend image..."
+
           kustomize edit set image \
             backend=${{ steps.login-ecr.outputs.registry }}/${{ secrets.AWS_ECR_REPOSITORY_BACKEND }}:${{ github.sha }}
 
+          echo "Generated Kubernetes configuration:"
+          kustomize build .
+
+          echo "Applying Kubernetes configuration..."
+
           kustomize build . | kubectl apply -f -
 
-      # Debug Kubernetes if deployment has a problem
-      - name: Debug Kubernetes
-        if: always()
+
+      # -------------------------
+      # Show deployment state
+      # -------------------------
+      - name: Check deployment state
         run: |
           echo "----- Deployment -----"
           kubectl get deployment backend -o wide
@@ -124,27 +186,81 @@ jobs:
           echo "----- Pods -----"
           kubectl get pods -l app=backend -o wide
 
-          echo "----- Pod Details -----"
-          kubectl describe pods -l app=backend
 
-          echo "----- Deployment Details -----"
-          kubectl describe deployment backend
-
-      # Verify Kubernetes deployment
+      # -------------------------
+      # Wait for rollout
+      # -------------------------
       - name: Verify Kubernetes deployment
         run: |
+          echo "Waiting for backend deployment rollout..."
+
           kubectl rollout status deployment/backend --timeout=180s
 
-          echo "----- Logging - kubectl get all -----"
+          echo "----- Kubernetes resources -----"
           kubectl get all
 
-          echo "----- Logging - kubectl describe deploy backend -----"
-          kubectl describe deploy backend
+          echo "----- Backend deployment -----"
+          kubectl describe deployment backend
 
-      # Verify ECR image
-      - name: Verify Backend ECR image
+
+      # -------------------------
+      # Debug if deployment fails
+      # -------------------------
+      - name: Debug Kubernetes
+        if: always()
         run: |
-          echo "----- Logging - Backend ECR Image Details -----"
+          echo "======================================"
+          echo "DEPLOYMENT"
+          echo "======================================"
+
+          kubectl get deployment backend -o wide || true
+
+
+          echo "======================================"
+          echo "REPLICASETS"
+          echo "======================================"
+
+          kubectl get rs -l app=backend -o wide || true
+
+
+          echo "======================================"
+          echo "PODS"
+          echo "======================================"
+
+          kubectl get pods -l app=backend -o wide || true
+
+
+          echo "======================================"
+          echo "POD DETAILS"
+          echo "======================================"
+
+          kubectl describe pods -l app=backend || true
+
+
+          echo "======================================"
+          echo "DEPLOYMENT DETAILS"
+          echo "======================================"
+
+          kubectl describe deployment backend || true
+
+
+          echo "======================================"
+          echo "KUBERNETES EVENTS"
+          echo "======================================"
+
+          kubectl get events \
+            --sort-by=.lastTimestamp || true
+
+
+      # -------------------------
+      # Verify ECR image
+      # -------------------------
+      - name: Verify Backend ECR image
+        if: always()
+        run: |
+          echo "======================================"
+          echo "BACKEND ECR IMAGE"
+          echo "======================================"
 
           AWS_PAGER="" aws ecr describe-images \
             --repository-name ${{ secrets.AWS_ECR_REPOSITORY_BACKEND }} \
