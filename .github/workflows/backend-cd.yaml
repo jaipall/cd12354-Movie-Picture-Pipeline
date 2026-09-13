@@ -111,17 +111,17 @@ jobs:
 
          kustomize build . | kubectl apply -f -
 
-     # Verify Kubernetes deployment
+      # Verify Kubernetes deployment
       - name: Verify Kubernetes deployment
         run: |
          kubectl rollout status deployment/backend --timeout=180s
 
          echo "----- Logging - kubectl get all -----"
-          kubectl get all
+         kubectl get all
 
-          echo "----- Logging - kubectl describe deploy backend -----"
-          kubectl describe deploy backend
-
+         echo "----- Logging - kubectl describe deploy backend -----"
+         kubectl describe deploy backend
+         
       # Verify ECR image
       - name: Verify Backend ECR image
         run: |
