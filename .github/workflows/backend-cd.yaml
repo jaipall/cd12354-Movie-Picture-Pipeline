@@ -104,24 +104,43 @@ jobs:
       # Deploy backend to Kubernetes
       - name: Deploy to Kubernetes via Kustomize
         run: |
-         cd starter/backend/k8s
+          cd starter/backend/k8s
 
-         kustomize edit set image \
-         backend=${{ steps.login-ecr.outputs.registry }}/${{ secrets.AWS_ECR_REPOSITORY_BACKEND }}:${{ github.sha }}
+          kustomize edit set image \
+            backend=${{ steps.login-ecr.outputs.registry }}/${{ secrets.AWS_ECR_REPOSITORY_BACKEND }}:${{ github.sha }}
 
-         kustomize build . | kubectl apply -f -
+          kustomize build . | kubectl apply -f -
+
+      # Debug Kubernetes if deployment has a problem
+      - name: Debug Kubernetes
+        if: always()
+        run: |
+          echo "----- Deployment -----"
+          kubectl get deployment backend -o wide
+
+          echo "----- ReplicaSets -----"
+          kubectl get rs -l app=backend -o wide
+
+          echo "----- Pods -----"
+          kubectl get pods -l app=backend -o wide
+
+          echo "----- Pod Details -----"
+          kubectl describe pods -l app=backend
+
+          echo "----- Deployment Details -----"
+          kubectl describe deployment backend
 
       # Verify Kubernetes deployment
       - name: Verify Kubernetes deployment
         run: |
-         kubectl rollout status deployment/backend --timeout=180s
+          kubectl rollout status deployment/backend --timeout=180s
 
-         echo "----- Logging - kubectl get all -----"
-         kubectl get all
+          echo "----- Logging - kubectl get all -----"
+          kubectl get all
 
-         echo "----- Logging - kubectl describe deploy backend -----"
-         kubectl describe deploy backend
-         
+          echo "----- Logging - kubectl describe deploy backend -----"
+          kubectl describe deploy backend
+
       # Verify ECR image
       - name: Verify Backend ECR image
         run: |
@@ -129,4 +148,4 @@ jobs:
 
           AWS_PAGER="" aws ecr describe-images \
             --repository-name ${{ secrets.AWS_ECR_REPOSITORY_BACKEND }} \
-            --image-ids imageTag=latest
+            --image-ids imageTag=${{ github.sha }}
