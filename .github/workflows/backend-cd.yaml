@@ -99,46 +99,42 @@ on:
       - 'starter/backend/**'
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: starter/backend
-
 jobs:
   lint:
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: starter/backend
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Install pipenv
         run: pip install pipenv
-
       - name: Install dependencies
-        run: cd starter/backend && pipenv install --dev
+        run: pipenv install --dev
       - name: Lint
-        run: cd starter/backend && pipenv run lint
+        run: pipenv run lint
 
   test:
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: starter/backend
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Install pipenv
         run: pip install pipenv
-
       - name: Install dependencies
-        run: cd starter/backend && pipenv install --dev
+        run: pipenv install --dev
       - name: Test
-        run: cd starter/backend && pipenv run test
+        run: pipenv run test
 
   build:
     needs: [lint, test]
@@ -152,6 +148,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -164,17 +161,18 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY_BACKEND }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          cd starter/backend
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Set up Kubeconfig for EKS
         run: |
-          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_DEFAULT_REGION }}
+          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
 
       - name: Deploy to Kubernetes via Kustomize
         run: |
           cd starter/backend/k8s
-          kustomize edit set image backend=${{ steps.login-ecr.outputs.registry }}/${{ secrets.BACKEND_ECR_REPO }}:latest
+          kustomize edit set image backend=${{ steps.login-ecr.outputs.registry }}/${{ secrets.AWS_ECR_REPOSITORY_BACKEND }}:latest
           kustomize build . | kubectl apply -f -
 
       - name: Verify Kubernetes deployment
@@ -188,4 +186,4 @@ jobs:
       - name: Verify Backend ECR image
         run: |
           echo "----- Logging - Backend ECR Image Details -----"
-          AWS_PAGER="" aws ecr describe-images --repository-name ${{ secrets.BACKEND_ECR_REPO }} --image-ids imageTag=latest
+          AWS_PAGER="" aws ecr describe-images --repository-name ${{ secrets.AWS_ECR_REPOSITORY_BACKEND }} --image-ids imageTag=latest
